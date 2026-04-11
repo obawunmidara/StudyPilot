@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import Button from "../ui/Button";
+import NewButton from "../ui/NewButton";
 import ThemeToggle from "../ui/ThemeToggle"; 
 
 
@@ -19,7 +19,7 @@ export default function AppNavbar({ dark, setDark }) {
         🛫 StudyPilot
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={() => navigate("/signup")}>Get Started</Button>
+        <NewButton onClick={() => navigate("/signup")}>Get Started</NewButton>
         <ThemeToggle dark={dark} setDark={setDark} />
       </div>
     </nav>
