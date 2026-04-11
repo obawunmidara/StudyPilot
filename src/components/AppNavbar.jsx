@@ -9,14 +9,14 @@ export default function AppNavbar({ dark, setDark }) {
   return (
     <nav
       style={{
-        background: dark ? "#111827" : "#ffffff",
-        borderBottom: dark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.08)",
+        background: dark ? "" : "#ffffff",
+        borderBottom: dark ? "1px solid rgba(0,0,0,0.08)" : "1px solid rgba(0,0,0,0.08)",
         transition: "background 0.3s",
       }}
       className="flex items-center justify-between p-4"
     >
       <div className="font-logo font-bold xl:text-3xl text-xl tracking-tight">
-        🛫 StudyPilot
+         StudyPilot
       </div>
       <div className="flex items-center gap-3">
         <NewButton onClick={() => navigate("/signup")}>Get Started</NewButton>
