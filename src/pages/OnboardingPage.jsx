@@ -226,29 +226,42 @@ export default function OnboardingPage() {
 
 function AddCourseForm({ onAdd }) {
   const [form, setForm] = useState({
-    name: "",
+    code: "",
+    title: "",
     units: "",
     examDate: "",
     confidence: "3",
   });
 
   const handleAdd = () => {
-    if (!form.name || !form.units || !form.examDate) return;
-    onAdd(form);
-    setForm({ name: "", units: "", examDate: "", confidence: "3" });
+    if (!form.code || !form.title || !form.units || !form.examDate) return;
+    onAdd({
+      ...form,
+      name: `${form.code} - ${form.title}`,
+    });
+    setForm({ code: "", title: "", units: "", examDate: "", confidence: "3" });
   };
 
   return (
     <div className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col gap-3">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add a course</p>
 
-      <input
-        type="text"
-        placeholder="Course name e.g. CSC 425"
-        value={form.name}
-        onChange={(e) => setForm({ ...form, name: e.target.value })}
-        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
-      />
+      <div className="flex gap-3">
+        <input
+          type="text"
+          placeholder="Course code e.g. CSC 425"
+          value={form.code}
+          onChange={(e) => setForm({ ...form, code: e.target.value })}
+          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+        />
+        <input
+          type="text"
+          placeholder="Course title e.g. Database Systems"
+          value={form.title}
+          onChange={(e) => setForm({ ...form, title: e.target.value })}
+          className="flex-[2] px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+        />
+      </div>
 
       <div className="flex gap-3">
         <input

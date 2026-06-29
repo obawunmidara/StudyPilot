@@ -147,7 +147,7 @@ export default function SignupPage() {
           onClick={() => navigate("/")}
           style={{ fontSize: 20, fontWeight: 800, marginBottom: 32, cursor: "pointer", color: "#2563eb" }}
         >
-          🛫 StudyPilot
+          StudyPilot
         </div>
 
         {/* Heading */}

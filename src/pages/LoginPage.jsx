@@ -18,17 +18,17 @@ export default function LoginPage() {
   };
 
   const handleGoogleSignIn = async () => {
-      try {
-        const user = await signInWithGoogle();
-        console.log(user);
-        navigate("/dashboard");
-      } catch (err) {
-        setError(err.message);
-        if (err.code === "auth/account-exists-with-different-credential") {
-          navigate("/login", { state: { message: "You already have an account. Please log in." } });
-        }
+    try {
+      const user = await signInWithGoogle();
+      console.log(user);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message);
+      if (err.code === "auth/account-exists-with-different-credential") {
+        navigate("/login", { state: { message: "You already have an account. Please log in." } });
       }
-    };
+    }
+  };
   const handleSubmit = async () => {
     if (!form.email || !form.password) {
       setError("All fields are required.");
@@ -66,7 +66,7 @@ export default function LoginPage() {
           onClick={() => navigate("/")}
           className="text-blue-600 font-extrabold text-xl mb-8 cursor-pointer"
         >
-          🛫 StudyPilot
+          StudyPilot
         </div>
 
         {/* Heading */}
@@ -133,40 +133,40 @@ export default function LoginPage() {
           >
             Log in
           </button>
-          <HRText text="or"/>
+          <HRText text="or" />
           {/* Google Sign-In */}
-            <button
-              onClick={handleGoogleSignIn}
-              className="flex items-center justify-center mt-2 gap-3 w-full py-3.5 border rounded-[28px] bg-white hover:bg-gray-100 transition "
+          <button
+            onClick={handleGoogleSignIn}
+            className="flex items-center justify-center mt-2 gap-3 w-full py-3.5 border rounded-[28px] bg-white hover:bg-gray-100 transition "
+          >
+
+            {/* Google Icon */}
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 48 48"
             >
+              <path
+                fill="#EA4335"
+                d="M24 9.5c3.54 0 6.72 1.22 9.22 3.6l6.9-6.9C35.64 2.36 30.2 0 24 0 14.6 0 6.46 5.4 2.56 13.28l8.04 6.24C12.6 13.2 17.8 9.5 24 9.5z"
+              />
+              <path
+                fill="#4285F4"
+                d="M46.5 24c0-1.64-.14-3.2-.4-4.72H24v9h12.7c-.55 2.96-2.2 5.48-4.7 7.2l7.2 5.6C43.98 36.8 46.5 30.9 46.5 24z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M10.6 28.5c-.5-1.48-.78-3.06-.78-4.7s.28-3.22.78-4.7l-8.04-6.24C.92 16.36 0 20.08 0 24s.92 7.64 2.56 10.94l8.04-6.44z"
+              />
+              <path
+                fill="#34A853"
+                d="M24 48c6.2 0 11.4-2.04 15.2-5.56l-7.2-5.6c-2 1.36-4.56 2.16-8 2.16-6.2 0-11.4-3.7-13.4-9.02l-8.04 6.44C6.46 42.6 14.6 48 24 48z"
+              />
+            </svg>
 
-              {/* Google Icon */}
-              <svg
-                className="w-5 h-5"
-                viewBox="0 0 48 48"
-              >
-                <path
-                  fill="#EA4335"
-                  d="M24 9.5c3.54 0 6.72 1.22 9.22 3.6l6.9-6.9C35.64 2.36 30.2 0 24 0 14.6 0 6.46 5.4 2.56 13.28l8.04 6.24C12.6 13.2 17.8 9.5 24 9.5z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M46.5 24c0-1.64-.14-3.2-.4-4.72H24v9h12.7c-.55 2.96-2.2 5.48-4.7 7.2l7.2 5.6C43.98 36.8 46.5 30.9 46.5 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M10.6 28.5c-.5-1.48-.78-3.06-.78-4.7s.28-3.22.78-4.7l-8.04-6.24C.92 16.36 0 20.08 0 24s.92 7.64 2.56 10.94l8.04-6.44z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M24 48c6.2 0 11.4-2.04 15.2-5.56l-7.2-5.6c-2 1.36-4.56 2.16-8 2.16-6.2 0-11.4-3.7-13.4-9.02l-8.04 6.44C6.46 42.6 14.6 48 24 48z"
-                />
-              </svg>
-
-              <span className="text-gray-700 font-medium">
-                Sign in with Google
-              </span>
-            </button>
+            <span className="text-gray-700 font-medium">
+              Sign in with Google
+            </span>
+          </button>
         </div>
 
       </div>

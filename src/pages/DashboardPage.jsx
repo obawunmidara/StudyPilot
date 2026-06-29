@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../FireBase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { generateDailyPlan, getTodaysPlan, rankCourses, calculateStreak } from "../utils/priorityEngine";
+import { generateDailyPlan, getTodaysPlan, rankCourses, calculateStreak, checkAtRisk } from "../utils/priorityEngine";
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 
 
@@ -25,12 +25,22 @@ export default function DashboardPage() {
     difficulty: 3,
   });
   const [savingTopic, setSavingTopic] = useState(false);
+  const [showCourseModal, setShowCourseModal] = useState(false);
+  const [courseForm, setCourseForm] = useState({
+    code: "",
+    title: "",
+    units: "",
+    examDate: "",
+    confidence: "3",
+  });
+  const [savingCourse, setSavingCourse] = useState(false);
   const [wakeTime, setWakeTime] = useState("07:00");
   const [sleepTime, setSleepTime] = useState("22:00");
   const [commitments, setCommitments] = useState([]);
   const [freeWindows, setFreeWindows] = useState([]);
   const [totalFreeHours, setTotalFreeHours] = useState(0);
   const [todaysPlan, setTodaysPlan] = useState([]);
+  const [overloadedCourses, setOverloadedCourses] = useState([]);
 
   // Fetch courses from Firestore when page loads
   useEffect(() => {
@@ -184,6 +194,26 @@ export default function DashboardPage() {
     const todays = getTodaysPlan(plan);
     setTodaysPlan(todays);
 
+    // Check for overloaded courses using the actual generated plan
+    const overloaded = [];
+    courses.forEach(c => {
+      const examDateStr = new Date(c.examDate).toISOString().split("T")[0];
+
+      let isOverloaded = false;
+      for (const dateKey in plan) {
+        if (dateKey > examDateStr) {
+          if (plan[dateKey].some(t => t.courseId === c.id)) {
+            isOverloaded = true;
+            break;
+          }
+        }
+      }
+      if (isOverloaded) {
+        overloaded.push(c.code && c.title ? `${c.code} - ${c.title}` : c.name);
+      }
+    });
+    setOverloadedCourses(overloaded);
+
     // save plan to Firestore
     try {
       await addDoc(collection(db, "dailyPlans"), {
@@ -229,6 +259,43 @@ export default function DashboardPage() {
       console.error("Error adding topic:", err);
     }
     setSavingTopic(false);
+  };
+
+  const handleAddCourse = async () => {
+    if (!courseForm.code || !courseForm.title || !courseForm.units || !courseForm.examDate) return;
+    setSavingCourse(true);
+    try {
+      await addDoc(collection(db, "courses"), {
+        userId: auth.currentUser.uid,
+        name: `${courseForm.code} - ${courseForm.title}`,
+        code: courseForm.code,
+        title: courseForm.title,
+        creditUnits: Number(courseForm.units),
+        examDate: courseForm.examDate,
+        confidence: Number(courseForm.confidence),
+        totalTopics: 0,
+        remainingTopics: 0,
+        createdAt: new Date().toISOString(),
+      });
+
+      // refresh courses
+      const coursesQuery = query(
+        collection(db, "courses"),
+        where("userId", "==", auth.currentUser.uid)
+      );
+      const coursesSnapshot = await getDocs(coursesQuery);
+      const coursesData = coursesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setCourses(rankCourses(coursesData));
+
+      setCourseForm({ code: "", title: "", units: "", examDate: "", confidence: "3" });
+      setShowCourseModal(false);
+    } catch (err) {
+      console.error("Error adding course:", err);
+    }
+    setSavingCourse(false);
   };
 
   const EveningCheckIn = async () => {
@@ -457,9 +524,17 @@ export default function DashboardPage() {
 
           {/* Course priority */}
           <div>
-            <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 10 }}>
-              Course priority
-            </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "1px" }}>
+                Course priority
+              </p>
+              <button
+                onClick={() => setShowCourseModal(true)}
+                style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 20, border: "none", background: "#2563eb", color: "#fff", cursor: "pointer" }}
+              >
+                + Add course
+              </button>
+            </div>
 
             <div style={{ background: "#fff", borderRadius: 20, border: "1px solid #f0f0f0", overflow: "hidden" }}>
               {courses.length === 0 ? (
@@ -780,6 +855,56 @@ export default function DashboardPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Add Course Modal */}
+      {showCourseModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 800, color: "#111" }}>Add a course</p>
+              </div>
+              <button onClick={() => setShowCourseModal(false)} style={{ background: "transparent", border: "none", fontSize: 20, color: "#9ca3af", cursor: "pointer" }}>×</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 6 }}>Course code</label>
+                <input type="text" placeholder="e.g. CSC 425" value={courseForm.code} onChange={(e) => setCourseForm({ ...courseForm, code: e.target.value })} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ flex: 2 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 6 }}>Course title</label>
+                <input type="text" placeholder="e.g. Database Systems" value={courseForm.title} onChange={(e) => setCourseForm({ ...courseForm, title: e.target.value })} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" }} />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 6 }}>Credit units</label>
+                <input type="number" min={1} max={6} placeholder="e.g. 3" value={courseForm.units} onChange={(e) => setCourseForm({ ...courseForm, units: e.target.value })} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 6 }}>Exam date</label>
+                <input type="date" value={courseForm.examDate} onChange={(e) => setCourseForm({ ...courseForm, examDate: e.target.value })} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 6 }}>Confidence level: <span style={{ color: "#2563eb" }}>{courseForm.confidence}/5</span></label>
+              <input type="range" min={1} max={5} step={1} value={courseForm.confidence} onChange={(e) => setCourseForm({ ...courseForm, confidence: e.target.value })} style={{ width: "100%" }} />
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "#9ca3af" }}>Not confident</span><span style={{ fontSize: 11, color: "#9ca3af" }}>Very confident</span></div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowCourseModal(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b7280", cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleAddCourse} disabled={savingCourse || !courseForm.code || !courseForm.title || !courseForm.units || !courseForm.examDate} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "none", background: "#2563eb", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer", opacity: savingCourse || !courseForm.code || !courseForm.title || !courseForm.units || !courseForm.examDate ? 0.6 : 1 }}>
+                {savingCourse ? "Saving..." : "Add course"}
+              </button>
+            </div>
           </div>
         </div>
       )}
