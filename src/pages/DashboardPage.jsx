@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { signOut } from "firebase/auth";
 import { auth, db } from "../FireBase";
-import { generateDailyPlan, getTodaysPlan } from "../utils/priorityEngine";
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { generateDailyPlan, getTodaysPlan, rankCourses, calculateStreak } from "../utils/priorityEngine";
 import { collection, query, where, getDocs, addDoc, doc, updateDoc } from "firebase/firestore";
 
 export default function DashboardPage() {
@@ -11,6 +11,9 @@ export default function DashboardPage() {
   const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [showEveningModal, setShowEveningModal] = useState(false);
+  const [eveningConfidence, setEveningConfidence] = useState({});
+  const [streak, setStreak] = useState(0);
 
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -30,54 +33,66 @@ export default function DashboardPage() {
 
   // Fetch courses from Firestore when page loads
   useEffect(() => {
-    const fetchData = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        navigate("/login");
-        return;
-      }
-      setUser(currentUser);
+  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    if (!currentUser) {
+      navigate("/login");
+      return;
+    }
+    setUser(currentUser);
 
-      try {
-        // Fetch courses
-        const coursesQuery = query(
-          collection(db, "courses"),
+    try {
+      // Fetch courses
+      const coursesQuery = query(
+        collection(db, "courses"),
+        where("userId", "==", currentUser.uid)
+      );
+      const coursesSnapshot = await getDocs(coursesQuery);
+      const coursesData = coursesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setCourses(rankCourses(coursesData));
+
+      // Fetch topics
+      const topicsQuery = query(
+        collection(db, "topics"),
+        where("userId", "==", currentUser.uid)
+      );
+      const topicsSnapshot = await getDocs(topicsQuery);
+      const topicsData = topicsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setTopics(topicsData);
+
+      // Fetch preferences
+      const userDoc = await getDocs(collection(db, "users"));
+      const userData = userDoc.docs.find(d => d.id === currentUser.uid);
+      if (userData) setPreferences(userData.data());
+      // Calculate streak
+      // Fetch check-ins and calculate streak
+        const checkInsQuery = query(
+          collection(db, "checkIns"),
           where("userId", "==", currentUser.uid)
         );
-        const coursesSnapshot = await getDocs(coursesQuery);
-        const coursesData = coursesSnapshot.docs.map(doc => ({
+        const checkInsSnapshot = await getDocs(checkInsQuery);
+        const checkInsData = checkInsSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
         }));
-        setCourses(coursesData);
-
-        // Fetch topics
-        // Fetch topics
-        const topicsQuery = query(
-          collection(db, "topics"),
-          where("userId", "==", currentUser.uid)
-        );
-        const topicsSnapshot = await getDocs(topicsQuery);
-        const topicsData = topicsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setTopics(topicsData);
-
-        // Fetch preferences
-        const userDoc = await getDocs(collection(db, "users"));
-        const userData = userDoc.docs.find(d => d.id === currentUser.uid);
-        if (userData) setPreferences(userData.data());
+        setStreak(calculateStreak(checkInsData));
 
       } catch (err) {
         console.error("Error fetching data:", err);
       }
 
-      setLoading(false);
-    };
+    setLoading(false);
+  });
 
-    fetchData();
-  }, [navigate]);
+  return () => unsubscribe();
+}, [])
+;
+
 
   const handleLogout = async () => {
     await signOut(auth);  
@@ -205,6 +220,48 @@ export default function DashboardPage() {
     setSavingTopic(false);
   };
 
+  const EveningCheckIn = async () => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const doneTopics = todaysPlan.filter(t => t.status === "done");
+    const missedTopics = todaysPlan.filter(t => t.status === "pending");
+
+    // Save check-in to Firestore
+    await addDoc(collection(db, "checkIns"), {
+      userId: auth.currentUser.uid,
+      date: today,
+      doneTopics: doneTopics.map(t => t.id),
+      missedTopics: missedTopics.map(t => t.id),
+      createdAt: new Date().toISOString(),
+    });
+
+    setStreak(prev => prev + 1);
+
+    // Update confidence for each course
+    for (const courseId of Object.keys(eveningConfidence)) {
+      await updateDoc(doc(db, "courses", courseId), {
+        confidence: Number(eveningConfidence[courseId]),
+      });
+    }
+
+    // Update courses state locally
+    setCourses(prev => prev.map(c => 
+      eveningConfidence[c.id] 
+        ? { ...c, confidence: Number(eveningConfidence[c.id]) } 
+        : c
+    ));
+    setWakeTime("07:00");
+    setSleepTime("22:00");
+    setCommitments([]);
+    setFreeWindows([]);
+    setTotalFreeHours(0);
+    setTodaysPlan([]);
+    setShowEveningModal(false);
+    alert("Evening check-in saved! See you tomorrow 🌙");
+  } catch (err) {
+    console.error("Error saving evening check-in:", err);
+    }
+  };
   const toggleTopic = async (topic) => {
   const newStatus = topic.status === "done" ? "pending" : "done";
   
@@ -301,7 +358,7 @@ export default function DashboardPage() {
           {[
             { label: "Courses", value: courses.length, sub: "this semester", bg: "#eff6ff", color: "#1d4ed8" },
             { label: "Topics", value: topics.length, sub: "added so far", bg: "#fdf4ff", color: "#9333ea" },
-            { label: "Streak", value: "🔥 0", sub: "days in a row", bg: "#fffbeb", color: "#d97706" },
+            { label: "Streak", value: `🔥 ${streak}`, sub: "sessions in a row", bg: "#fffbeb", color: "#d97706" },
             { label: "At risk", value: courses.filter(c => getCourseStatus(c) === "at-risk").length, sub: "courses behind", bg: "#fff1f2", color: "#e11d48" },
           ].map((s) => (
             <div key={s.label} style={{ background: s.bg, borderRadius: 18, padding: "16px 18px" }}>
@@ -361,7 +418,16 @@ export default function DashboardPage() {
                   {/* Evening check-in button */}
                   <div style={{ padding: "12px 16px", background: "#fafafa", borderTop: "1px solid #f0f0f0" }}>
                     <button
-                      onClick={() => alert("Evening check-in coming soon!")}
+                      onClick={() => {
+                          // pre-fill confidence from current course values
+                          const affected = {};
+                          todaysPlan.forEach(topic => {
+                            const course = courses.find(c => c.id === topic.courseId);
+                            if (course) affected[course.id] = course.confidence;
+                          });
+                          setEveningConfidence(affected);
+                          setShowEveningModal(true);
+                        }}
                       style={{ width: "100%", padding: 11, background: "#0f0f0f", color: "#fff", border: "none", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
                     >
                       Submit evening check-in
@@ -493,6 +559,105 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      {/* Evening Check-in Modal */}
+      {showEveningModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.15)", maxHeight: "85vh", overflowY: "auto" }}>
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 800, color: "#111" }}>Evening check-in 🌙</p>
+                <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>How did today go?</p>
+              </div>
+              <button
+                onClick={() => setShowEveningModal(false)}
+                style={{ background: "transparent", border: "none", fontSize: 20, color: "#9ca3af", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Topics review */}
+            <p style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 10 }}>
+              Today's topics
+            </p>
+            <div style={{ background: "#fafafa", borderRadius: 16, overflow: "hidden", marginBottom: 20 }}>
+              {todaysPlan.map((topic, index) => (
+                <div
+                  key={index}
+                  onClick={() => toggleTopic(topic)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: index < todaysPlan.length - 1 ? "1px solid #f0f0f0" : "none", cursor: "pointer" }}
+                >
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", border: topic.status === "done" ? "none" : "1.5px solid #d1d5db", background: topic.status === "done" ? "#22c55e" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {topic.status === "done" && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5l2.5 2.5L8 3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: topic.status === "done" ? "#9ca3af" : "#111", textDecoration: topic.status === "done" ? "line-through" : "none" }}>
+                      {topic.name}
+                    </p>
+                    <p style={{ fontSize: 11, color: "#9ca3af" }}>{topic.courseName}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Confidence update */}
+            <p style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 10 }}>
+              Update confidence
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 24 }}>
+              {[...new Set(todaysPlan.map(t => t.courseId))].map(courseId => {
+                const course = courses.find(c => c.id === courseId);
+                if (!course) return null;
+                return (
+                  <div key={courseId}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{course.name}</label>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#2563eb" }}>
+                        {eveningConfidence[courseId] || course.confidence}/5
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      step={1}
+                      value={eveningConfidence[courseId] || course.confidence}
+                      onChange={(e) => setEveningConfidence({ ...eveningConfidence, [courseId]: e.target.value })}
+                      style={{ width: "100%" }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>Not confident</span>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>Very confident</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setShowEveningModal(false)}
+                style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b7280", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={EveningCheckIn}
+                style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "none", background: "#0f0f0f", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}
+              >
+                Submit check-in
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Add Topic Modal */}
       {showTopicModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>

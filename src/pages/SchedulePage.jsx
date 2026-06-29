@@ -1,57 +1,82 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth, db } from "../FireBase";
 
 export default function SchedulePage() {
   const navigate = useNavigate();
   const [weekOffset, setWeekOffset] = useState(0);
+  const [scheduleData, setScheduleData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
 
-  const scheduleData = {
-    "2026-04-02": [
-      { course: "CSC 425", topic: "Process scheduling", difficulty: "Hard", time: "1hr", done: true },
-      { course: "MAT 201", topic: "Linear transformations", difficulty: "Hard", time: "2hr", done: false },
-    ],
-    "2026-04-03": [
-      { course: "PHY 305", topic: "Electromagnetic induction", difficulty: "Medium", time: "1hr", done: false },
-      { course: "ENG 301", topic: "Technical report structure", difficulty: "Easy", time: "30min", done: false },
-    ],
-    "2026-04-04": [
-      { course: "MAT 201", topic: "Eigenvalues and eigenvectors", difficulty: "Hard", time: "2hr", done: false },
-    ],
-    "2026-04-05": [],
-    "2026-04-06": [
-      { course: "CSC 301", topic: "Database normalization", difficulty: "Medium", time: "1hr", done: false },
-      { course: "STA 201", topic: "Probability distributions", difficulty: "Medium", time: "1hr", done: false },
-    ],
-    "2026-04-07": [
-      { course: "PHY 305", topic: "Maxwell equations", difficulty: "Hard", time: "2hr", done: false },
-    ],
-    "2026-04-08": [
-      { course: "ENG 301", topic: "Research methodology", difficulty: "Easy", time: "30min", done: false },
-      { course: "CSC 425", topic: "Virtual memory", difficulty: "Hard", time: "1hr", done: false },
-    ],
-    "2026-04-09": [
-      { course: "MAT 201", topic: "Vector spaces", difficulty: "Hard", time: "2hr", done: false },
-    ],
-    "2026-04-10": [
-      { course: "CSC 301", topic: "SQL joins", difficulty: "Medium", time: "1hr", done: false },
-    ],
-    "2026-04-11": [],
-    "2026-04-12": [
-      { course: "PHY 305", topic: "Quantum mechanics intro", difficulty: "Hard", time: "2hr", done: false },
-    ],
-    "2026-04-13": [
-      { course: "ENG 301", topic: "Academic writing", difficulty: "Easy", time: "30min", done: false },
-    ],
-    "2026-04-14": [
-      { course: "MAT 201", topic: "Matrix diagonalization", difficulty: "Hard", time: "2hr", done: false },
-    ],
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
+      setUser(currentUser);
+
+      try {
+        // Fetch all topics for this user
+        const topicsQuery = query(
+          collection(db, "topics"),
+          where("userId", "==", currentUser.uid)
+        );
+        const topicsSnapshot = await getDocs(topicsQuery);
+        const topicsData = {};
+        topicsSnapshot.docs.forEach(doc => {
+          topicsData[doc.id] = { id: doc.id, ...doc.data() };
+        });
+
+        // Fetch all daily plans for this user
+        const plansQuery = query(
+          collection(db, "dailyPlans"),
+          where("userId", "==", currentUser.uid)
+        );
+        const plansSnapshot = await getDocs(plansQuery);
+
+        // Build schedule data — date key → array of topics
+        const schedule = {};
+        plansSnapshot.docs.forEach(doc => {
+          const plan = doc.data();
+          const date = plan.date;
+          if (!schedule[date]) schedule[date] = [];
+          const planTopics = (plan.topics || [])
+            .map(topicId => topicsData[topicId])
+            .filter(Boolean);
+          schedule[date] = [...schedule[date], ...planTopics];
+        });
+
+        setScheduleData(schedule);
+      } catch (err) {
+        console.error("Error fetching schedule:", err);
+      }
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/login");
   };
 
-  const diffStyle = (d) => ({
-    Hard: { background: "#fee2e2", color: "#dc2626" },
-    Medium: { background: "#fef9c3", color: "#a16207" },
-    Easy: { background: "#dcfce7", color: "#16a34a" },
-  }[d]);
+  const diffStyle = (difficulty) => {
+    if (difficulty >= 4) return { background: "#fee2e2", color: "#dc2626" };
+    if (difficulty >= 3) return { background: "#fef9c3", color: "#a16207" };
+    return { background: "#dcfce7", color: "#16a34a" };
+  };
+
+  const diffLabel = (difficulty) => {
+    if (difficulty >= 4) return "Hard";
+    if (difficulty >= 3) return "Medium";
+    return "Easy";
+  };
 
   const getWeekDays = () => {
     const today = new Date();
@@ -75,7 +100,6 @@ export default function SchedulePage() {
   const isPast = (date) => date < new Date() && !isToday(date);
 
   const weekDays = getWeekDays();
-
   const weekLabel = `${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekDays[6].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 
   const DayCard = ({ day }) => {
@@ -108,20 +132,20 @@ export default function SchedulePage() {
         </div>
 
         {dayTopics.length === 0 ? (
-          <p style={{ fontSize: 11, color: "#d1d5db", fontWeight: 500 }}>Rest day</p>
+          <p style={{ fontSize: 11, color: "#d1d5db", fontWeight: 500 }}>No plan yet</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {dayTopics.map((t, i) => (
               <div key={i} style={{ background: "#fafafa", borderRadius: 8, padding: "6px 8px" }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", marginBottom: 1 }}>{t.course}</p>
-                <p style={{ fontSize: 11, fontWeight: 600, color: t.done ? "#9ca3af" : "#111", textDecoration: t.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {t.topic}
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", marginBottom: 1 }}>{t.courseName}</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: t.status === "done" ? "#9ca3af" : "#111", textDecoration: t.status === "done" ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {t.name}
                 </p>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 10, ...diffStyle(t.difficulty) }}>
-                    {t.difficulty}
+                    {diffLabel(t.difficulty)}
                   </span>
-                  <span style={{ fontSize: 10, color: "#9ca3af" }}>{t.time}</span>
+                  <span style={{ fontSize: 10, color: "#9ca3af" }}>{t.estimatedTime}</span>
                 </div>
               </div>
             ))}
@@ -130,6 +154,14 @@ export default function SchedulePage() {
       </div>
     );
   };
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        <p style={{ color: "#9ca3af", fontSize: 14 }}>Loading your schedule...</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#fafafa", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -142,8 +174,14 @@ export default function SchedulePage() {
             Dashboard
           </span>
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>
-            T
+            {user?.email?.charAt(0).toUpperCase()}
           </div>
+          <button
+            onClick={handleLogout}
+            style={{ fontSize: 13, fontWeight: 600, color: "#ef4444", background: "transparent", border: "none", cursor: "pointer" }}
+          >
+            Logout
+          </button>
         </div>
       </nav>
 
@@ -179,17 +217,7 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        {/* Desktop — 2 rows of 4 then 3 */}
-        <div style={{ display: "none" }} className="desktop-grid">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
-            {weekDays.slice(0, 4).map((day, i) => <DayCard key={i} day={day} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            {weekDays.slice(4).map((day, i) => <DayCard key={i} day={day} />)}
-          </div>
-        </div>
-
-        {/* Responsive grid */}
+        {/* Schedule grid */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
           {weekDays.map((day, i) => <DayCard key={i} day={day} />)}
         </div>
