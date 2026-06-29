@@ -232,7 +232,7 @@ export default function SignupPage() {
               <path fill="#FBBC05" d="M10.6 28.5c-.5-1.48-.78-3.06-.78-4.7s.28-3.22.78-4.7l-8.04-6.24C.92 16.36 0 20.08 0 24s.92 7.64 2.56 10.94l8.04-6.44z" />
               <path fill="#34A853" d="M24 48c6.2 0 11.4-2.04 15.2-5.56l-7.2-5.6c-2 1.36-4.56 2.16-8 2.16-6.2 0-11.4-3.7-13.4-9.02l-8.04 6.44C6.46 42.6 14.6 48 24 48z" />
             </svg>
-            <span className="text-gray-700 font-medium">Sign in with Google</span>
+            <span className="text-gray-700 font-medium">Sign up with Google</span>
           </button>
         </div>
       </div>
