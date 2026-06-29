@@ -4,7 +4,7 @@ import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import OnboardingPage from './pages/OnboardingPage'
 import DashboardPage from './pages/DashboardPage'
-import SchedulePage from './pages/SchedulePage'
+import CourseDetail from './pages/CourseDetail'
 import ForgotPasswordPage from './pages/ForgotPassword'
 
 const App = () => {
@@ -16,7 +16,7 @@ const App = () => {
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/schedule" element={<SchedulePage />} />
+        <Route path="/course/:id" element={<CourseDetail />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Routes>
     </BrowserRouter>

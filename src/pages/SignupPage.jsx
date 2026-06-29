@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../FireBase";
+import { auth, db } from "../FireBase";
 import { signInWithGoogle } from "../utils/auth";
+import { HRText } from "flowbite-react";
+import { doc, setDoc } from "firebase/firestore";
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -13,16 +15,32 @@ export default function SignupPage() {
     password: "",
     confirmPassword: "",
   });
-  const [error, setError] = useState("");
-  const [isEmail, setisEmail] = useState("false");  
+  const [error1, setError1] = useState("");
+  const [error2, setError2] = useState("");
+  const [isEmail, setisEmail] = useState("false");
 
   const handleGoogleSignIn = async () => {
     try {
-      const user = await signInWithGoogle();
-      console.log(user);
-      navigate("/onboarding");
+      const result = await signInWithGoogle();
+      const user = result;
+
+      // Check if user already exists in Firestore
+      const { doc, getDoc } = await import("firebase/firestore");
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+
+      if (userDoc.exists()) {
+        // Returning user — go to dashboard
+        navigate("/dashboard");
+      } else {
+        // New user — go to onboarding
+        navigate("/onboarding");
+      }
     } catch (err) {
-      setError(err.message);
+      if (err.code === "auth/account-exists-with-different-credential" || err.code === "auth/email-already-in-use") {
+        navigate("/login", { state: { message: "You already have an account. Please log in." } });
+      } else {
+        setError1(err.message);
+      }
     }
   };
 
@@ -52,46 +70,58 @@ export default function SignupPage() {
     return errors;
   };
   const handleSubmit = async () => {
+    // Check if state actually has the name
+    console.log("Current Form State:", form);
+
     if (!form.name || !form.email || !form.password || !form.confirmPassword) {
-      setError("All fields are required.");
+      setError2("All fields are required.");
       return;
     }
 
     if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match.");
+      setError2("Passwords do not match.");
       return;
     }
 
-    // Check password rules
     const passwordErrors = validatePassword(form.password);
-
     if (passwordErrors.length > 0) {
-      setError("Password must include:\n• " + passwordErrors.join("\n• "));
+      setError2("Password must include:\n• " + passwordErrors.join("\n• "));
       return;
     }
 
-    setError("");
-
+    setError2("");
     try {
-      await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const user = userCredential.user;
+
+      // LOG THE DATA BEFORE SENDING
+      console.log("Writing to Firestore for UID:", user.uid);
+      console.log("Name being sent:", form.name);
+
+      await setDoc(doc(db, "users", user.uid), {
+        name: form.name, // If console.log showed a name, it will save here
+        email: form.email,
+        createdAt: new Date().toISOString(),
+        role: "student"
+      });
+
       navigate("/onboarding");
     } catch (err) {
+      console.error("Firebase Error:", err.code, err.message);
       if (err.code === "auth/email-already-in-use") {
-        setError("An account with this email already exists.");
-      } else if (err.code === "auth/invalid-email") {
-        setError("Please enter a valid email address.");
+        navigate("/login", { state: { message: "You already have an account. Please log in." } });
       } else {
-        setError("Something went wrong. Please try again.");
+        setError1(err.message);
       }
     }
   };
   const handleEmail = () => {
     if (form.email === "") {
-      setError("Email is required to sign up with email.");
+      setError1("Email is required to sign up with email.");
     } else {
       setisEmail("true");
     }
-    setError("");
+    setError1("");
   }
   return isEmail === "true" ? (
     <div
@@ -135,7 +165,7 @@ export default function SignupPage() {
         </p>
 
         {/* Error */}
-        {error && (
+        {error1 && (
           <div
             style={{
               background: "#fef2f2",
@@ -147,7 +177,7 @@ export default function SignupPage() {
               marginBottom: 20,
             }}
           >
-            {error}
+            {error1}
           </div>
         )}
 
@@ -242,7 +272,7 @@ export default function SignupPage() {
           </p>
 
           {/* Error */}
-          {error && (
+          {error2 && (
             <div
               style={{
                 background: "#fef2f2",
@@ -254,7 +284,7 @@ export default function SignupPage() {
                 marginBottom: 20,
               }}
             >
-              {error}
+              {error2}
             </div>
           )}
 
@@ -290,7 +320,17 @@ export default function SignupPage() {
                 />
               </div>
             ))}
+            {/* Submit */}
+            <button
+              onClick={handleEmail}
+              className="w-full py-3.5 bg-blue-600 text-white border-0 rounded-[28px] text-[15px] font-semibold cursor-pointer mt-2 transition-opacity duration-200 hover:opacity-90"
+              onMouseEnter={e => e.target.style.opacity = 0.85}
+              onMouseLeave={e => e.target.style.opacity = 1}
+            >
+              Create account
+            </button>
 
+            <HRText text="or" />
             {/* Google Sign-In */}
             <button
               onClick={handleGoogleSignIn}
@@ -323,16 +363,6 @@ export default function SignupPage() {
               <span className="text-gray-700 font-medium">
                 Sign in with Google
               </span>
-            </button>
-
-            {/* Submit */}
-            <button
-              onClick={handleEmail}
-              className="w-full py-3.5 bg-blue-600 text-white border-0 rounded-[28px] text-[15px] font-semibold cursor-pointer mt-2 transition-opacity duration-200 hover:opacity-90"
-              onMouseEnter={e => e.target.style.opacity = 0.85}
-              onMouseLeave={e => e.target.style.opacity = 1}
-            >
-              Create account
             </button>
           </div>
         </div>

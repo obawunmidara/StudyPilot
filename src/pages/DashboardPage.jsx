@@ -3,17 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { auth, db } from "../FireBase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { generateDailyPlan, getTodaysPlan, rankCourses, calculateStreak } from "../utils/priorityEngine";
-import { collection, query, where, getDocs, addDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+
+
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
   const [showEveningModal, setShowEveningModal] = useState(false);
   const [eveningConfidence, setEveningConfidence] = useState({});
   const [streak, setStreak] = useState(0);
+  const [userData, setUserData] = useState(null);
 
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -28,49 +30,54 @@ export default function DashboardPage() {
   const [commitments, setCommitments] = useState([]);
   const [freeWindows, setFreeWindows] = useState([]);
   const [totalFreeHours, setTotalFreeHours] = useState(0);
-  const [preferences, setPreferences] = useState({ maxTopics: 5, maxHardTopics: 2 });
   const [todaysPlan, setTodaysPlan] = useState([]);
 
   // Fetch courses from Firestore when page loads
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-    if (!currentUser) {
-      navigate("/login");
-      return;
-    }
-    setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
 
-    try {
-      // Fetch courses
-      const coursesQuery = query(
-        collection(db, "courses"),
-        where("userId", "==", currentUser.uid)
-      );
-      const coursesSnapshot = await getDocs(coursesQuery);
-      const coursesData = coursesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setCourses(rankCourses(coursesData));
+      try {
+        // Fetch courses
+        const coursesQuery = query(
+          collection(db, "courses"),
+          where("userId", "==", currentUser.uid)
+        );
+        const coursesSnapshot = await getDocs(coursesQuery);
+        const coursesData = coursesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setCourses(rankCourses(coursesData));
 
-      // Fetch topics
-      const topicsQuery = query(
-        collection(db, "topics"),
-        where("userId", "==", currentUser.uid)
-      );
-      const topicsSnapshot = await getDocs(topicsQuery);
-      const topicsData = topicsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setTopics(topicsData);
+        // Fetch topics
+        const topicsQuery = query(
+          collection(db, "topics"),
+          where("userId", "==", currentUser.uid)
+        );
+        const topicsSnapshot = await getDocs(topicsQuery);
+        const topicsData = topicsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setTopics(topicsData);
 
-      // Fetch preferences
-      const userDoc = await getDocs(collection(db, "users"));
-      const userData = userDoc.docs.find(d => d.id === currentUser.uid);
-      if (userData) setPreferences(userData.data());
-      // Calculate streak
-      // Fetch check-ins and calculate streak
+        // Fetch user data
+        const userRef = doc(db, "users", currentUser.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          // 3. Store the full object (including the name!)
+          setUserData(userSnap.data());
+        } else {
+          console.log("No profile found in Firestore for this UID.");
+        }
+
+        // Calculate streak
+        // Fetch check-ins and calculate streak
         const checkInsQuery = query(
           collection(db, "checkIns"),
           where("userId", "==", currentUser.uid)
@@ -86,19 +93,21 @@ export default function DashboardPage() {
         console.error("Error fetching data:", err);
       }
 
-    setLoading(false);
-  });
+      setLoading(false);
+    });
 
-  return () => unsubscribe();
-}, [])
-;
+    return () => unsubscribe();
+  }, [])
+    ;
 
 
   const handleLogout = async () => {
-    await signOut(auth);  
+    await signOut(auth);
     navigate("/login");
   };
-
+  const handleBackToLanding = () => {
+    navigate("/");
+  };
   const addCommitment = () => {
     const lastEnd = commitments.length > 0
       ? commitments[commitments.length - 1].end
@@ -118,6 +127,7 @@ export default function DashboardPage() {
     ));
   };
 
+
   const toMins = (t) => {
     const [h, m] = t.split(":").map(Number);
     return h * 60 + m;
@@ -133,161 +143,161 @@ export default function DashboardPage() {
   };
 
   const generatePlan = async () => {
-  // calculate free windows first
-  let wakeM = toMins(wakeTime);
-  let sleepM = toMins(sleepTime);
-  if (sleepM <= wakeM) sleepM += 24 * 60;
+    // calculate free windows first
+    let wakeM = toMins(wakeTime);
+    let sleepM = toMins(sleepTime);
+    if (sleepM <= wakeM) sleepM += 24 * 60;
 
-  const blocked = commitments.map((c) => {
-    let s = toMins(c.start);
-    let e = toMins(c.end);
-    if (s < wakeM) s += 24 * 60;
-    if (e < wakeM) e += 24 * 60;
-    return { s, e };
-  }).filter(c => c.s < sleepM && c.e > wakeM)
-    .sort((a, b) => a.s - b.s);
+    const blocked = commitments.map((c) => {
+      let s = toMins(c.start);
+      let e = toMins(c.end);
+      if (s < wakeM) s += 24 * 60;
+      if (e < wakeM) e += 24 * 60;
+      return { s, e };
+    }).filter(c => c.s < sleepM && c.e > wakeM)
+      .sort((a, b) => a.s - b.s);
 
-  const windows = [];
-  let cursor = wakeM;
-  for (const b of blocked) {
-    if (b.s > cursor) windows.push({ s: cursor, e: b.s });
-    cursor = Math.max(cursor, b.e);
-  }
-  if (cursor < sleepM) windows.push({ s: cursor, e: sleepM });
+    const windows = [];
+    let cursor = wakeM;
+    for (const b of blocked) {
+      if (b.s > cursor) windows.push({ s: cursor, e: b.s });
+      cursor = Math.max(cursor, b.e);
+    }
+    if (cursor < sleepM) windows.push({ s: cursor, e: sleepM });
 
-  let totalMins = 0;
-  const labels = windows.map((w) => {
-    const dur = w.e - w.s;
-    totalMins += dur;
-    const h = Math.floor(dur / 60);
-    const m = dur % 60;
-    const label = h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
-    return `${toDisplay(w.s % (24 * 60))} – ${toDisplay(w.e % (24 * 60))} (${label})`;
-  });
-
-  setFreeWindows(labels);
-  setTotalFreeHours(Math.round(totalMins / 60));
-
-  // run the algorithm
-  const plan = generateDailyPlan(courses, topics, preferences);
-  const todays = getTodaysPlan(plan);
-  setTodaysPlan(todays);
-
-  // save plan to Firestore
-  try {
-    await addDoc(collection(db, "dailyPlans"), {
-      userId: auth.currentUser.uid,
-      date: new Date().toISOString().split("T")[0],
-      topics: todays.map(t => t.id),
-      createdAt: new Date().toISOString(),
+    let totalMins = 0;
+    const labels = windows.map((w) => {
+      const dur = w.e - w.s;
+      totalMins += dur;
+      const h = Math.floor(dur / 60);
+      const m = dur % 60;
+      const label = h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+      return `${toDisplay(w.s % (24 * 60))} – ${toDisplay(w.e % (24 * 60))} (${label})`;
     });
-  } catch (err) {
-    console.error("Error saving plan:", err);
+
+    setFreeWindows(labels);
+    setTotalFreeHours(Math.round(totalMins / 60));
+
+    // run the algorithm — use totalMins directly (totalFreeHours state is stale here)
+    const freeMinutes = totalMins;
+    const plan = generateDailyPlan(courses, topics, userData, freeMinutes);
+    const todays = getTodaysPlan(plan);
+    setTodaysPlan(todays);
+
+    // save plan to Firestore
+    try {
+      await addDoc(collection(db, "dailyPlans"), {
+        userId: auth.currentUser.uid,
+        date: new Date().toISOString().split("T")[0],
+        topics: todays.map(t => t.id),
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("Error saving plan:", err);
     }
   };
 
   const handleAddTopic = async () => {
-  if (!topicForm.name) return;
-  setSavingTopic(true);
-  try {
-    await addDoc(collection(db, "topics"), {
-      userId: auth.currentUser.uid,
-      courseId: selectedCourse.id,
-      courseName: selectedCourse.name,
-      name: topicForm.name,
-      estimatedTime: topicForm.estimatedTime,
-      difficulty: Number(topicForm.difficulty),
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    });
+    if (!topicForm.name) return;
+    setSavingTopic(true);
+    try {
+      await addDoc(collection(db, "topics"), {
+        userId: auth.currentUser.uid,
+        courseId: selectedCourse.id,
+        courseName: selectedCourse.name,
+        name: topicForm.name,
+        estimatedTime: topicForm.estimatedTime,
+        difficulty: Number(topicForm.difficulty),
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      });
 
-    // refresh topics
-    const topicsQuery = query(
-      collection(db, "topics"),
-      where("userId", "==", auth.currentUser.uid)
-    );
-    const topicsSnapshot = await getDocs(topicsQuery);
-    const topicsData = topicsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    setTopics(topicsData);
-    setTopicForm({ name: "", estimatedTime: "1hr", difficulty: 3 });
-    setShowTopicModal(false);
-  } catch (err) {
-    console.error("Error adding topic:", err);
+      // refresh topics
+      const topicsQuery = query(
+        collection(db, "topics"),
+        where("userId", "==", auth.currentUser.uid)
+      );
+      const topicsSnapshot = await getDocs(topicsQuery);
+      const topicsData = topicsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setTopics(topicsData);
+      setTopicForm({ name: "", estimatedTime: "1hr", difficulty: 3 });
+      setShowTopicModal(false);
+    } catch (err) {
+      console.error("Error adding topic:", err);
     }
     setSavingTopic(false);
   };
 
   const EveningCheckIn = async () => {
-  try {
-    const today = new Date().toISOString().split("T")[0];
-    const doneTopics = todaysPlan.filter(t => t.status === "done");
-    const missedTopics = todaysPlan.filter(t => t.status === "pending");
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const doneTopics = todaysPlan.filter(t => t.status === "done");
+      const missedTopics = todaysPlan.filter(t => t.status === "pending");
 
-    // Save check-in to Firestore
-    await addDoc(collection(db, "checkIns"), {
-      userId: auth.currentUser.uid,
-      date: today,
-      doneTopics: doneTopics.map(t => t.id),
-      missedTopics: missedTopics.map(t => t.id),
-      createdAt: new Date().toISOString(),
-    });
-
-    setStreak(prev => prev + 1);
-
-    // Update confidence for each course
-    for (const courseId of Object.keys(eveningConfidence)) {
-      await updateDoc(doc(db, "courses", courseId), {
-        confidence: Number(eveningConfidence[courseId]),
+      // Save check-in to Firestore
+      await addDoc(collection(db, "checkIns"), {
+        userId: auth.currentUser.uid,
+        date: today,
+        doneTopics: doneTopics.map(t => t.id),
+        missedTopics: missedTopics.map(t => t.id),
+        createdAt: new Date().toISOString(),
       });
-    }
 
-    // Update courses state locally
-    setCourses(prev => prev.map(c => 
-      eveningConfidence[c.id] 
-        ? { ...c, confidence: Number(eveningConfidence[c.id]) } 
-        : c
-    ));
-    setWakeTime("07:00");
-    setSleepTime("22:00");
-    setCommitments([]);
-    setFreeWindows([]);
-    setTotalFreeHours(0);
-    setTodaysPlan([]);
-    setShowEveningModal(false);
-    alert("Evening check-in saved! See you tomorrow 🌙");
-  } catch (err) {
-    console.error("Error saving evening check-in:", err);
+      setStreak(prev => prev + 1);
+
+      // Update confidence for each course
+      for (const courseId of Object.keys(eveningConfidence)) {
+        await updateDoc(doc(db, "courses", courseId), {
+          confidence: Number(eveningConfidence[courseId]),
+        });
+      }
+
+      // Update courses state locally
+      setCourses(prev => prev.map(c =>
+        eveningConfidence[c.id]
+          ? { ...c, confidence: Number(eveningConfidence[c.id]) }
+          : c
+      ));
+      setWakeTime("07:00");
+      setSleepTime("22:00");
+      setCommitments([]);
+      setFreeWindows([]);
+      setTotalFreeHours(0);
+      setTodaysPlan([]);
+      setShowEveningModal(false);
+      alert("Evening check-in saved! See you tomorrow 🌙");
+    } catch (err) {
+      console.error("Error saving evening check-in:", err);
     }
   };
   const toggleTopic = async (topic) => {
-  const newStatus = topic.status === "done" ? "pending" : "done";
-  
-  // update visually immediately
-  setTodaysPlan(prev => prev.map(t => 
-    t.id === topic.id ? { ...t, status: newStatus } : t
-  ));
-  setTopics(prev => prev.map(t =>
-    t.id === topic.id ? { ...t, status: newStatus } : t
-  ));
+    const newStatus = topic.status === "done" ? "pending" : "done";
 
-  // save to Firestore
-  try {
-    await updateDoc(doc(db, "topics", topic.id), {
-      status: newStatus,
-    });
-  } catch (err) {
-    console.error("Error updating topic:", err);
+    // update visually immediately
+    setTodaysPlan(prev => prev.map(t =>
+      t.id === topic.id ? { ...t, status: newStatus } : t
+    ));
+    setTopics(prev => prev.map(t =>
+      t.id === topic.id ? { ...t, status: newStatus } : t
+    ));
+
+    // save to Firestore
+    try {
+      await updateDoc(doc(db, "topics", topic.id), {
+        status: newStatus,
+      });
+    } catch (err) {
+      console.error("Error updating topic:", err);
     }
   };
 
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric",
-  });
+
 
   const barColor = (s) => ({
+    "done": "#22c55e",
     "at-risk": "#ef4444",
     "watch": "#f59e0b",
     "good": "#22c55e",
@@ -303,6 +313,7 @@ export default function DashboardPage() {
   };
 
   const statusStyle = (s) => ({
+    "done": { background: "#dcfce7", color: "#16a34a" },
     "at-risk": { background: "#fee2e2", color: "#dc2626" },
     "watch": { background: "#fef9c3", color: "#a16207" },
   }[s]);
@@ -322,20 +333,15 @@ export default function DashboardPage() {
 
       {/* Navbar */}
       <nav style={{ background: "#fff", borderBottom: "1px solid #f0f0f0", padding: "0 1.5rem", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ color: "#2563eb", fontWeight: 800, fontSize: 17 }}>
-          🛫 StudyPilot
+        <div style={{ color: "#2563eb", fontWeight: 800, fontSize: 17, cursor: "pointer" }} onClick={handleBackToLanding}>
+          StudyPilot
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span onClick={() => navigate("/schedule")} style={{ fontSize: 13, color: "#9ca3af", cursor: "pointer", fontWeight: 500 }}>
-            Schedule
-          </span>
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>
-            {user?.email?.charAt(0).toUpperCase()}
+            {userData?.name ? userData.name.charAt(0).toUpperCase() : "?"}
+            {console.log(userData)}
           </div>
-          <button
-            onClick={handleLogout}
-            style={{ fontSize: 13, fontWeight: 600, color: "#ef4444", background: "transparent", border: "none", cursor: "pointer" }}
-          >
+          <button onClick={handleLogout} style={{ fontSize: 13, fontWeight: 600, color: "#ef4444", background: "transparent", border: "none", cursor: "pointer" }}>
             Logout
           </button>
         </div>
@@ -344,13 +350,13 @@ export default function DashboardPage() {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "1.5rem" }}>
 
         {/* Greeting */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f0f0f", letterSpacing: "-0.5px", marginBottom: 4 }}>
-              Good morning 👋
-            </h1>
-            <p style={{ fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{today}</p>
-          </div>
+        <div className="text-2xl font-bold mb-4">
+          {(() => {
+            const hour = new Date().getHours();
+            if (hour < 12) return "Good morning ";
+            if (hour < 17) return "Good afternoon ";
+            return "Good evening ";
+          })()} {userData?.name ? `, ${userData.name}` : ""}
         </div>
 
         {/* Metric cards */}
@@ -359,7 +365,13 @@ export default function DashboardPage() {
             { label: "Courses", value: courses.length, sub: "this semester", bg: "#eff6ff", color: "#1d4ed8" },
             { label: "Topics", value: topics.length, sub: "added so far", bg: "#fdf4ff", color: "#9333ea" },
             { label: "Streak", value: `🔥 ${streak}`, sub: "sessions in a row", bg: "#fffbeb", color: "#d97706" },
-            { label: "At risk", value: courses.filter(c => getCourseStatus(c) === "at-risk").length, sub: "courses behind", bg: "#fff1f2", color: "#e11d48" },
+            {
+              label: "At risk", value: courses.filter(c => {
+                const ct = topics.filter(t => t.courseId === c.id);
+                const prog = ct.length > 0 ? Math.round((ct.filter(t => t.status === "done").length / ct.length) * 100) : 0;
+                return prog < 100 && getCourseStatus(c) === "at-risk";
+              }).length, sub: "courses behind", bg: "#fff1f2", color: "#e11d48"
+            },
           ].map((s) => (
             <div key={s.label} style={{ background: s.bg, borderRadius: 18, padding: "16px 18px" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6 }}>{s.label}</p>
@@ -378,10 +390,15 @@ export default function DashboardPage() {
               Today's reading list
             </p>
             <div style={{ background: "#fff", borderRadius: 20, border: "1px solid #f0f0f0", padding: 20 }}>
-              {todaysPlan.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>
-                  Add topics to your courses then hit "Generate today's plan" 👇
-                </p>
+              {todaysPlan.length < 0 ? (
+                <>
+                  <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>
+                    Add topics to your courses then hit "Generate today's plan" 👇
+                  </p>
+                  <p>
+                    {todaysPlan.length}
+                  </p>
+                </>
               ) : (
                 <>
                   {todaysPlan.map((topic, index) => (
@@ -419,15 +436,15 @@ export default function DashboardPage() {
                   <div style={{ padding: "12px 16px", background: "#fafafa", borderTop: "1px solid #f0f0f0" }}>
                     <button
                       onClick={() => {
-                          // pre-fill confidence from current course values
-                          const affected = {};
-                          todaysPlan.forEach(topic => {
-                            const course = courses.find(c => c.id === topic.courseId);
-                            if (course) affected[course.id] = course.confidence;
-                          });
-                          setEveningConfidence(affected);
-                          setShowEveningModal(true);
-                        }}
+                        // pre-fill confidence from current course values
+                        const affected = {};
+                        todaysPlan.forEach(topic => {
+                          const course = courses.find(c => c.id === topic.courseId);
+                          if (course) affected[course.id] = course.confidence;
+                        });
+                        setEveningConfidence(affected);
+                        setShowEveningModal(true);
+                      }}
                       style={{ width: "100%", padding: 11, background: "#0f0f0f", color: "#fff", border: "none", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
                     >
                       Submit evening check-in
@@ -446,13 +463,17 @@ export default function DashboardPage() {
 
             <div style={{ background: "#fff", borderRadius: 20, border: "1px solid #f0f0f0", overflow: "hidden" }}>
               {courses.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: 20 }}>No courses yet</p>
+                <div style={{ padding: 24, textAlign: "center" }}>
+                  <p style={{ fontSize: 24, marginBottom: 8 }}>📚</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "#111", marginBottom: 4 }}>No courses yet</p>
+                  <p style={{ fontSize: 12, color: "#9ca3af" }}>Go back to onboarding to add your courses</p>
+                </div>
               ) : (
                 courses.map((course, index) => {
-                  const status = getCourseStatus(course);
                   const courseTopics = topics.filter(t => t.courseId === course.id);
                   const done = courseTopics.filter(t => t.status === "done").length;
                   const progress = courseTopics.length > 0 ? Math.round((done / courseTopics.length) * 100) : 0;
+                  const status = progress === 100 ? "done" : getCourseStatus(course);
                   const examDate = new Date(course.examDate);
                   const daysLeft = Math.ceil((examDate - new Date()) / (1000 * 60 * 60 * 24));
 
@@ -464,7 +485,7 @@ export default function DashboardPage() {
                           <span style={{ fontSize: 13, fontWeight: 700, color: "#111" }}>{course.name}</span>
                           {status !== "good" && (
                             <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, ...statusStyle(status) }}>
-                              {status === "at-risk" ? "At risk" : "Watch"}
+                              {status === "done" ? "Done ✓" : status === "at-risk" ? "At risk" : "Watch"}
                             </span>
                           )}
                         </div>
@@ -477,12 +498,20 @@ export default function DashboardPage() {
                         <p style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>
                           {progress}% done · {courseTopics.length} topics · confidence {course.confidence}/5
                         </p>
-                        <button
-                          onClick={() => { setSelectedCourse(course); setShowTopicModal(true); }}
-                          style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, border: "1px solid #e5e7eb", background: "transparent", color: "#2563eb", cursor: "pointer" }}
-                        >
-                          + Add topic
-                        </button>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button
+                            onClick={() => { setSelectedCourse(course); setShowTopicModal(true); }}
+                            style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, border: "1px solid #e5e7eb", background: "transparent", color: "#2563eb", cursor: "pointer" }}
+                          >
+                            + Add topic
+                          </button>
+                          <button
+                            onClick={() => navigate(`/course/${course.id}`)}
+                            style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, border: "1px solid #2563eb", background: "#eff6ff", color: "#2563eb", cursor: "pointer" }}
+                          >
+                            View →
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -662,7 +691,7 @@ export default function DashboardPage() {
       {showTopicModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
           <div style={{ background: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
-            
+
             {/* Modal header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div>

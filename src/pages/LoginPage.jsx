@@ -3,9 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../FireBase";
 import { signInWithGoogle } from "../utils/auth";
+import { useLocation } from "react-router-dom";
+import { HRText } from "flowbite-react";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectMessage = location.state?.message || "";
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
 
@@ -20,6 +24,9 @@ export default function LoginPage() {
         navigate("/dashboard");
       } catch (err) {
         setError(err.message);
+        if (err.code === "auth/account-exists-with-different-credential") {
+          navigate("/login", { state: { message: "You already have an account. Please log in." } });
+        }
       }
     };
   const handleSubmit = async () => {
@@ -75,6 +82,19 @@ export default function LoginPage() {
             Sign up
           </span>
         </p>
+        {redirectMessage && (
+          <div style={{
+            background: "#eff6ff",
+            color: "#2563eb",
+            border: "1px solid #bfdbfe",
+            borderRadius: 10,
+            padding: "10px 14px",
+            fontSize: 13,
+            marginBottom: 20,
+          }}>
+            {redirectMessage}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -113,7 +133,7 @@ export default function LoginPage() {
           >
             Log in
           </button>
-          
+          <HRText text="or"/>
           {/* Google Sign-In */}
             <button
               onClick={handleGoogleSignIn}
