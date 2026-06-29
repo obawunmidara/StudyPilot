@@ -121,7 +121,7 @@ export default function SignupPage() {
             color: "#2563eb",
           }}
         >
-          🛫 StudyPilot
+          StudyPilot
         </div>
 
         {/* Heading */}
@@ -172,10 +172,10 @@ export default function SignupPage() {
         {/* Form */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {[
-            { label: "Full name", name: "name", type: "text", placeholder: "Tolu Adeleke" },
-            { label: "Email address", name: "email", type: "email", placeholder: "tolu@email.com" },
-            { label: "Password", name: "password", type: "password", placeholder: "Min. 8 characters" },
-            { label: "Confirm password", name: "confirmPassword", type: "password", placeholder: "Repeat your password" },
+            { label: "Full name", name: "name", type: "text", placeholder: "e.g Tolu Adeleke" },
+            { label: "Email address", name: "email", type: "email", placeholder: "e.g [tolu@gmail.com]" },
+            { label: "Password", name: "password", type: "password", placeholder: "e.g Min. 8 characters" },
+            { label: "Confirm password", name: "confirmPassword", type: "password", placeholder: "e.g Repeat your password" },
           ].map((field) => (
             <div key={field.name}>
               <label
